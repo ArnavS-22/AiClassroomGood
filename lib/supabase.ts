@@ -1,23 +1,17 @@
-import { createClient } from "@supabase/supabase-js"
-import { cookies } from "next/headers"
+// This file is for backward compatibility with existing code
+// It re-exports functions from the new files
 
-export const getSupabaseBrowserClient = () => {
-  return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!)
-}
+import { supabaseBrowser, getSupabaseBrowserClient as getBrowserClient } from "./supabase-browser"
+import { createServerSupabaseClient, createServiceRoleSupabaseClient } from "./supabase-server"
 
-export function createServerClient() {
-  const cookieStore = cookies()
-  return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
-    cookies: {
-      get(name: string) {
-        return cookieStore.get(name)?.value
-      },
-      set(name: string, value: string, options: any) {
-        cookieStore.set({ name, value, ...options })
-      },
-      remove(name: string, options: any) {
-        cookieStore.delete({ name, ...options })
-      },
-    },
-  })
-}
+// Re-export the functions with the original names
+export const getSupabaseBrowserClient = getBrowserClient
+
+// Re-export the createServerClient function
+export const createServerClient = createServerSupabaseClient
+
+// Re-export the service role client
+export const getSupabaseServiceRoleClient = createServiceRoleSupabaseClient
+
+// Export the browser client directly
+export const supabase = supabaseBrowser

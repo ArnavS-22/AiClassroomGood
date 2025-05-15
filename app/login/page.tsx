@@ -1,37 +1,139 @@
 "use client"
 
-import type React from "react"
-
-import { useState } from "react"
-import { useAuth } from "@/contexts/auth-context"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { Alert, AlertDescription } from "@/components/ui/alert"
+import { useState, useEffect } from "react"
 import Link from "next/link"
+import { z } from "zod"
+import { zodResolver } from "@hookform/resolvers/zod"
+import { useForm } from "react-hook-form"
+import { Button } from "@/components/ui/button"
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
+import { Input } from "@/components/ui/input"
+import { useAuth } from "@/contexts/auth-context"
+import { useToast } from "@/hooks/use-toast"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { supabaseBrowser } from "@/lib/supabase-browser"
+import { useRouter } from "next/navigation"
 import { Loader2 } from "lucide-react"
 
+const formSchema = z.object({
+  email: z.string().email({
+    message: "Please enter a valid email address.",
+  }),
+  password: z.string().min(1, {
+    message: "Password is required.",
+  }),
+})
+
 export default function LoginPage() {
-  const [email, setEmail] = useState("")
-  const [password, setPassword] = useState("")
-  const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
+  const [loginStatus, setLoginStatus] = useState<"idle" | "loading" | "success" | "error">("idle")
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [isResendingEmail, setIsResendingEmail] = useState(false)
+  const [resendEmail, setResendEmail] = useState("")
   const { signIn } = useAuth()
+  const { toast } = useToast()
+  const router = useRouter()
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setIsLoading(true)
-    setError(null)
+  const form = useForm<z.infer<typeof formSchema>>({
+    resolver: zodResolver(formSchema),
+    defaultValues: {
+      email: "",
+      password: "",
+    },
+  })
 
-    try {
-      const { error } = await signIn(email, password)
-      if (error) {
-        setError(error)
+  // Clear error message when form values change
+  useEffect(() => {
+    const subscription = form.watch(() => {
+      if (errorMessage) {
+        setErrorMessage(null)
       }
-    } catch (err: any) {
-      setError(err.message || "An error occurred during login")
+    })
+    return () => subscription.unsubscribe()
+  }, [form, errorMessage])
+
+  async function onSubmit(values: z.infer<typeof formSchema>) {
+    try {
+      setIsLoading(true)
+      setLoginStatus("loading")
+      setErrorMessage(null)
+
+      console.time("login")
+      const { error } = await signIn(values.email, values.password)
+      console.timeEnd("login")
+
+      if (error) {
+        setLoginStatus("error")
+        setErrorMessage(error)
+
+        // If the error is about email confirmation, store the email for resending
+        if (error.includes("confirm your email")) {
+          setResendEmail(values.email)
+        }
+
+        toast({
+          title: "Login Failed",
+          description: error,
+          variant: "destructive",
+        })
+        return
+      }
+
+      // Success case
+      setLoginStatus("success")
+      toast({
+        title: "Login Successful",
+        description: "You have successfully logged in.",
+      })
+
+      // No need to manually redirect here - the auth context handles it based on role
+    } catch (error) {
+      console.error("Login error:", error)
+      setLoginStatus("error")
+      setErrorMessage("An unexpected error occurred. Please try again.")
+
+      toast({
+        title: "Login Error",
+        description: "An unexpected error occurred. Please try again.",
+        variant: "destructive",
+      })
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  async function handleResendConfirmationEmail() {
+    try {
+      setIsResendingEmail(true)
+
+      // Get the redirect URL
+      const redirectUrl = `${window.location.origin}/auth/callback`
+
+      const { error } = await supabaseBrowser.auth.resend({
+        type: "signup",
+        email: resendEmail,
+        options: {
+          emailRedirectTo: redirectUrl,
+        },
+      })
+
+      if (error) throw error
+
+      toast({
+        title: "Confirmation email sent",
+        description: "Please check your inbox for the confirmation link.",
+      })
+
+      setErrorMessage(null)
+    } catch (error) {
+      console.error("Error resending confirmation email:", error)
+      toast({
+        title: "Error",
+        description: "Failed to resend confirmation email. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsResendingEmail(false)
     }
   }
 
@@ -44,46 +146,62 @@ export default function LoginPage() {
           </span>
         </h1>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Login</CardTitle>
-            <CardDescription>Enter your credentials to access your account</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {error && (
-              <Alert variant="destructive" className="mb-6">
-                <AlertDescription>{error}</AlertDescription>
-              </Alert>
-            )}
+        <div className="bg-white p-8 rounded-xl border border-blue-100 shadow-sm">
+          {loginStatus === "success" && (
+            <Alert className="mb-6 bg-green-50 border-green-200">
+              <AlertDescription className="text-green-800">Login successful! Redirecting you...</AlertDescription>
+            </Alert>
+          )}
 
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="space-y-2">
-                <label htmlFor="email" className="text-sm font-medium">
-                  Email
-                </label>
-                <Input
-                  id="email"
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                  placeholder="you@example.com"
-                />
-              </div>
+          {errorMessage && (
+            <Alert variant="destructive" className="mb-6">
+              <AlertDescription>
+                {errorMessage}
+                {resendEmail && (
+                  <div className="mt-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleResendConfirmationEmail}
+                      disabled={isResendingEmail}
+                    >
+                      {isResendingEmail ? "Sending..." : "Resend confirmation email"}
+                    </Button>
+                  </div>
+                )}
+              </AlertDescription>
+            </Alert>
+          )}
 
-              <div className="space-y-2">
-                <label htmlFor="password" className="text-sm font-medium">
-                  Password
-                </label>
-                <Input
-                  id="password"
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                  placeholder="••••••••"
-                />
-              </div>
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+              <FormField
+                control={form.control}
+                name="email"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Email</FormLabel>
+                    <FormControl>
+                      <Input type="email" placeholder="you@example.com" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="password"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Password</FormLabel>
+                    <FormControl>
+                      <Input type="password" placeholder="••••••••" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
               <Button
                 type="submit"
@@ -96,20 +214,19 @@ export default function LoginPage() {
                     Logging in...
                   </>
                 ) : (
-                  "Login"
+                  "Log in"
                 )}
               </Button>
             </form>
-          </CardContent>
-          <CardFooter className="flex justify-center">
-            <div className="text-sm text-gray-500">
-              Don&apos;t have an account?{" "}
-              <Link href="/signup" className="text-blue-600 hover:text-blue-800 font-medium">
-                Sign up
-              </Link>
-            </div>
-          </CardFooter>
-        </Card>
+          </Form>
+
+          <div className="mt-6 text-center text-sm">
+            Don&apos;t have an account?{" "}
+            <Link href="/signup" className="text-blue-600 hover:text-blue-800 font-medium">
+              Sign up
+            </Link>
+          </div>
+        </div>
       </div>
     </div>
   )

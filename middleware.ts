@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import type { NextRequest } from "next/server"
-import { createClient } from "@supabase/supabase-js"
+import { createNonAppSupabaseClient } from "@/lib/supabase-non-app"
 
 export async function middleware(request: NextRequest) {
   // Skip middleware for auth-related routes
@@ -14,16 +14,7 @@ export async function middleware(request: NextRequest) {
   }
 
   // Create a Supabase client configured to use cookies
-  const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
-    auth: {
-      persistSession: false,
-    },
-    global: {
-      headers: {
-        cookie: request.headers.get("cookie") || "",
-      },
-    },
-  })
+  const supabase = createNonAppSupabaseClient(request.headers.get("cookie") || "")
 
   // Refresh session if expired - required for Server Components
   const {
