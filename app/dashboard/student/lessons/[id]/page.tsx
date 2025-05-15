@@ -27,6 +27,7 @@ export default function StudentLessonPage() {
         setIsLoading(true)
         setError(null)
 
+        console.log(`Fetching lesson data for lesson ID: ${id}`)
         const response = await fetch(`/api/lessons/${id}/ai-content`)
 
         if (!response.ok) {
@@ -34,6 +35,7 @@ export default function StudentLessonPage() {
           try {
             const errorData = await response.json()
             errorMessage = errorData.error || errorMessage
+            console.error("Error response:", errorData)
           } catch (e) {
             console.error("Error parsing error response:", e)
           }
@@ -41,6 +43,12 @@ export default function StudentLessonPage() {
         }
 
         const data = await response.json()
+        console.log("Lesson data received:", data)
+
+        if (!data.lesson) {
+          throw new Error("Lesson not found")
+        }
+
         setLesson(data.lesson)
         setAiContent(data.aiContent)
       } catch (error: any) {
@@ -53,6 +61,43 @@ export default function StudentLessonPage() {
 
     fetchLessonData()
   }, [id, user])
+
+  // Function to trigger AI content generation
+  const handleGenerateAIContent = async () => {
+    if (!user || !id || !lesson) return
+
+    try {
+      setIsLoading(true)
+      setError(null)
+
+      const response = await fetch("/api/lessons/generate-ai", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          lessonId: id,
+          teacherId: lesson.teacher_id, // This should be available in the lesson data
+        }),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || "Failed to generate AI content")
+      }
+
+      // Wait a moment to allow processing to start
+      await new Promise((resolve) => setTimeout(resolve, 1000))
+
+      // Refresh the page to show the processing status
+      window.location.reload()
+    } catch (error: any) {
+      console.error("Error generating AI content:", error)
+      setError(error.message || "Failed to generate AI content")
+    } finally {
+      setIsLoading(false)
+    }
+  }
 
   if (isLoading) {
     return (
@@ -71,30 +116,10 @@ export default function StudentLessonPage() {
           <AlertDescription>{error}</AlertDescription>
         </Alert>
 
-        {lesson && (
-          <Card className="mt-6 border border-blue-100">
-            <CardHeader>
-              <CardTitle>{lesson.title}</CardTitle>
-              <CardDescription>
-                Grade: {lesson.grade_level} | Subject: {lesson.subject}
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <p className="mb-4">{lesson.description}</p>
-              <p className="text-amber-600 mb-4">
-                The interactive lesson content is still being generated. Please check back later.
-              </p>
-              {lesson.file_url && (
-                <Button variant="outline" asChild>
-                  <a href={lesson.file_url} target="_blank" rel="noopener noreferrer">
-                    <FileText className="mr-2 h-4 w-4" />
-                    View Original Lesson Material
-                  </a>
-                </Button>
-              )}
-            </CardContent>
-          </Card>
-        )}
+        <div className="mt-6 text-center">
+          <p className="mb-4">The lesson could not be found or there was an error loading it.</p>
+          <Button onClick={() => router.push("/dashboard/student")}>Back to Dashboard</Button>
+        </div>
       </div>
     )
   }
@@ -102,7 +127,13 @@ export default function StudentLessonPage() {
   if (!lesson) {
     return (
       <div className="container mx-auto px-4 py-8 text-center">
-        <p>Lesson not found.</p>
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>Lesson not found</AlertDescription>
+        </Alert>
+        <div className="mt-6">
+          <Button onClick={() => router.push("/dashboard/student")}>Back to Dashboard</Button>
+        </div>
       </div>
     )
   }
@@ -170,25 +201,27 @@ export default function StudentLessonPage() {
           <TabsContent value="lesson">
             <Card className="border border-blue-100">
               <CardContent className="pt-6">
-                {aiContent.content.sections.map((section: any, index: number) => (
-                  <div key={index} className="mb-8">
-                    <h3 className="text-xl font-semibold mb-3">{section.title}</h3>
-                    <p className="mb-4 whitespace-pre-line">{section.content}</p>
+                {aiContent.content &&
+                  aiContent.content.sections &&
+                  aiContent.content.sections.map((section: any, index: number) => (
+                    <div key={index} className="mb-8">
+                      <h3 className="text-xl font-semibold mb-3">{section.title}</h3>
+                      <p className="mb-4 whitespace-pre-line">{section.content}</p>
 
-                    {section.keyPoints && section.keyPoints.length > 0 && (
-                      <div className="mt-4 bg-blue-50 p-4 rounded-md">
-                        <h4 className="font-medium mb-2">Key Points:</h4>
-                        <ul className="list-disc pl-5 space-y-1">
-                          {section.keyPoints.map((point: string, i: number) => (
-                            <li key={i}>{point}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-                  </div>
-                ))}
+                      {section.keyPoints && section.keyPoints.length > 0 && (
+                        <div className="mt-4 bg-blue-50 p-4 rounded-md">
+                          <h4 className="font-medium mb-2">Key Points:</h4>
+                          <ul className="list-disc pl-5 space-y-1">
+                            {section.keyPoints.map((point: string, i: number) => (
+                              <li key={i}>{point}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  ))}
 
-                {aiContent.content.keyTerms && aiContent.content.keyTerms.length > 0 && (
+                {aiContent.content && aiContent.content.keyTerms && aiContent.content.keyTerms.length > 0 && (
                   <div className="mt-8 border-t pt-6">
                     <h3 className="text-xl font-semibold mb-4">Key Terms</h3>
                     <div className="grid md:grid-cols-2 gap-4">
@@ -212,44 +245,75 @@ export default function StudentLessonPage() {
                 <CardDescription>Answer these questions to check your understanding of the lesson.</CardDescription>
               </CardHeader>
               <CardContent>
-                {aiContent.quiz.questions.map((question: any, qIndex: number) => (
-                  <div key={qIndex} className="mb-8 pb-6 border-b last:border-b-0">
-                    <h3 className="text-lg font-medium mb-3">
-                      {qIndex + 1}. {question.question}
-                    </h3>
-                    <div className="space-y-2 mb-4">
-                      {question.options.map((option: string, oIndex: number) => (
-                        <div key={oIndex} className="flex items-start">
-                          <div
-                            className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border ${
-                              oIndex === question.correctAnswer
-                                ? "border-green-500 bg-green-50 text-green-600"
-                                : "border-gray-300"
-                            } mr-3`}
-                          >
-                            {String.fromCharCode(65 + oIndex)}
+                {aiContent.quiz &&
+                  aiContent.quiz.questions &&
+                  aiContent.quiz.questions.map((question: any, qIndex: number) => (
+                    <div key={qIndex} className="mb-8 pb-6 border-b last:border-b-0">
+                      <h3 className="text-lg font-medium mb-3">
+                        {qIndex + 1}. {question.question}
+                      </h3>
+                      <div className="space-y-2 mb-4">
+                        {question.options.map((option: string, oIndex: number) => (
+                          <div key={oIndex} className="flex items-start">
+                            <div
+                              className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border ${
+                                oIndex === question.correctAnswer
+                                  ? "border-green-500 bg-green-50 text-green-600"
+                                  : "border-gray-300"
+                              } mr-3`}
+                            >
+                              {String.fromCharCode(65 + oIndex)}
+                            </div>
+                            <div>{option}</div>
                           </div>
-                          <div>{option}</div>
-                        </div>
-                      ))}
+                        ))}
+                      </div>
+                      <div className="bg-blue-50 p-4 rounded-md mt-4">
+                        <h4 className="font-medium mb-1">Explanation:</h4>
+                        <p>{question.explanation}</p>
+                      </div>
                     </div>
-                    <div className="bg-blue-50 p-4 rounded-md mt-4">
-                      <h4 className="font-medium mb-1">Explanation:</h4>
-                      <p>{question.explanation}</p>
-                    </div>
-                  </div>
-                ))}
+                  ))}
               </CardContent>
             </Card>
           </TabsContent>
         </Tabs>
       ) : (
-        <Alert className="bg-amber-50 border-amber-200">
-          <AlertCircle className="h-4 w-4 text-amber-600" />
-          <AlertDescription className="text-amber-800">
-            The interactive lesson content is still being generated. Please check back later.
-          </AlertDescription>
-        </Alert>
+        <div className="space-y-4">
+          <Alert className="bg-amber-50 border-amber-200">
+            <AlertCircle className="h-4 w-4 text-amber-600" />
+            <AlertDescription className="text-amber-800">
+              The interactive lesson content is not available yet.
+            </AlertDescription>
+          </Alert>
+
+          {lesson.ai_processing_needed && !lesson.ai_processed && (
+            <Alert className="bg-blue-50 border-blue-200">
+              <Loader2 className="h-4 w-4 text-blue-600 animate-spin" />
+              <AlertDescription className="text-blue-800">
+                AI content is currently being generated. Please check back in a few minutes.
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {!lesson.ai_processing_needed && !lesson.ai_processed && (
+            <div className="text-center py-4">
+              <Button onClick={handleGenerateAIContent} disabled={isLoading}>
+                {isLoading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Generating...
+                  </>
+                ) : (
+                  "Generate AI Content"
+                )}
+              </Button>
+              <p className="text-sm text-gray-500 mt-2">
+                Click to generate interactive lesson content based on the original material.
+              </p>
+            </div>
+          )}
+        </div>
       )}
     </div>
   )

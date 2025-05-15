@@ -21,36 +21,70 @@ export async function POST(request: Request) {
     // Create a Supabase client with the service role key to bypass RLS
     const supabaseAdmin = createServerClient()
 
-    // Verify teacher owns this classroom
-    const { data: classroom, error: classroomError } = await supabaseAdmin
+    // First, check if the classroom exists at all
+    const { data: classroom, error: classroomLookupError } = await supabaseAdmin
       .from("classrooms")
       .select("*")
       .eq("id", classroomId)
-      .eq("teacher_id", teacherId)
-      .single()
+      .maybeSingle()
 
-    if (classroomError) {
-      console.error("Error verifying classroom ownership:", classroomError)
-      if (classroomError.code === "PGRST116") {
-        return NextResponse.json({ error: "Classroom not found or access denied" }, { status: 404 })
-      }
-      return NextResponse.json({ error: "Failed to verify classroom ownership" }, { status: 500 })
+    if (classroomLookupError) {
+      console.error("Error looking up classroom:", classroomLookupError)
+      return NextResponse.json({ error: "Failed to look up classroom" }, { status: 500 })
+    }
+
+    if (!classroom) {
+      console.error("Classroom not found:", { classroomId })
+      return NextResponse.json({ error: `Classroom not found: {"classroomId":"${classroomId}"}` }, { status: 404 })
+    }
+
+    console.log("Found classroom:", {
+      classroomId: classroom.id,
+      classroomName: classroom.name,
+      classroomTeacherId: classroom.teacher_id,
+      requestTeacherId: teacherId,
+    })
+
+    // Now verify teacher owns this classroom
+    if (classroom.teacher_id !== teacherId) {
+      console.error("Teacher does not own classroom:", {
+        classroomTeacherId: classroom.teacher_id,
+        requestTeacherId: teacherId,
+      })
+      return NextResponse.json({ error: "Access denied - you don't own this classroom" }, { status: 403 })
     }
 
     // Verify teacher owns this lesson
-    const { data: lesson, error: lessonError } = await supabaseAdmin
+    const { data: lesson, error: lessonLookupError } = await supabaseAdmin
       .from("lessons")
       .select("*")
       .eq("id", lessonId)
-      .eq("teacher_id", teacherId)
-      .single()
+      .maybeSingle()
 
-    if (lessonError) {
-      console.error("Error verifying lesson ownership:", lessonError)
-      if (lessonError.code === "PGRST116") {
-        return NextResponse.json({ error: "Lesson not found or access denied" }, { status: 404 })
-      }
-      return NextResponse.json({ error: "Failed to verify lesson ownership" }, { status: 500 })
+    if (lessonLookupError) {
+      console.error("Error looking up lesson:", lessonLookupError)
+      return NextResponse.json({ error: "Failed to look up lesson" }, { status: 500 })
+    }
+
+    if (!lesson) {
+      console.error("Lesson not found:", { lessonId })
+      return NextResponse.json({ error: "Lesson not found" }, { status: 404 })
+    }
+
+    console.log("Found lesson:", {
+      lessonId: lesson.id,
+      lessonTitle: lesson.title,
+      lessonTeacherId: lesson.teacher_id,
+      requestTeacherId: teacherId,
+    })
+
+    // Verify teacher owns this lesson
+    if (lesson.teacher_id !== teacherId) {
+      console.error("Teacher does not own lesson:", {
+        lessonTeacherId: lesson.teacher_id,
+        requestTeacherId: teacherId,
+      })
+      return NextResponse.json({ error: "Access denied - you don't own this lesson" }, { status: 403 })
     }
 
     // Check if the lesson is already in the classroom
@@ -70,6 +104,12 @@ export async function POST(request: Request) {
 
     if (existingClassroomLesson) {
       // Update the visibility if the lesson is already in the classroom
+      console.log("Lesson already in classroom, updating visibility:", {
+        classroomLessonId: existingClassroomLesson.id,
+        currentVisibility: existingClassroomLesson.visible,
+        newVisibility: visible,
+      })
+
       const { data: updatedClassroomLesson, error: updateError } = await supabaseAdmin
         .from("classroom_lessons")
         .update({ visible })
@@ -85,6 +125,8 @@ export async function POST(request: Request) {
       classroomLesson = updatedClassroomLesson
     } else {
       // Add the lesson to the classroom
+      console.log("Adding new lesson to classroom")
+
       const { data: newClassroomLesson, error: insertError } = await supabaseAdmin
         .from("classroom_lessons")
         .insert([
@@ -105,6 +147,12 @@ export async function POST(request: Request) {
 
       classroomLesson = newClassroomLesson
     }
+
+    console.log("Successfully processed classroom lesson:", {
+      operation: existingClassroomLesson ? "updated" : "added",
+      classroomLessonId: classroomLesson.id,
+      visible: classroomLesson.visible,
+    })
 
     return NextResponse.json({
       message: existingClassroomLesson ? "Lesson visibility updated" : "Lesson added to classroom",

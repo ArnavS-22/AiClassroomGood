@@ -16,7 +16,7 @@ import { useToast } from "@/hooks/use-toast"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Label } from "@/components/ui/label"
-import { AlertCircle } from "lucide-react"
+import { AlertCircle, RefreshCw } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Switch } from "@/components/ui/switch"
 
@@ -52,6 +52,7 @@ export default function TeacherDashboard() {
   const [isAssigning, setIsAssigning] = useState(false)
   const [isLoadingClassrooms, setIsLoadingClassrooms] = useState(false)
   const [classroomFetchError, setClassroomFetchError] = useState<string | null>(null)
+  const [isRefreshingClassrooms, setIsRefreshingClassrooms] = useState(false)
 
   // Refs to track fetch status and prevent duplicate fetches
   const initialFetchDone = useRef(false)
@@ -84,7 +85,7 @@ export default function TeacherDashboard() {
   async function fetchData() {
     setIsLoading(true)
     try {
-      await Promise.all([fetchLessons(), fetchClassrooms(), fetchAssignments()])
+      await Promise.all([fetchLessons(), fetchClassrooms(true), fetchAssignments()])
     } finally {
       setIsLoading(false)
     }
@@ -113,6 +114,58 @@ export default function TeacherDashboard() {
       })
     } finally {
       fetchingLessons.current = false
+    }
+  }
+
+  // Force refresh classrooms using the API route
+  async function forceRefreshClassrooms() {
+    if (!user) return
+
+    try {
+      setIsRefreshingClassrooms(true)
+      console.log("Force refreshing classrooms via API")
+
+      // Use the API route with force refresh parameter
+      const timestamp = Date.now()
+      const response = await fetch(`/api/teacher/get-classrooms?teacherId=${user.id}&nocache=${timestamp}&force=true`, {
+        method: "GET",
+        headers: {
+          "Cache-Control": "no-cache, no-store, must-revalidate",
+          Pragma: "no-cache",
+          Expires: "0",
+        },
+      })
+
+      if (!response.ok) {
+        let errorMessage = `HTTP error! status: ${response.status}`
+
+        try {
+          const contentType = response.headers.get("content-type")
+          if (contentType && contentType.includes("application/json")) {
+            const errorData = await response.json()
+            errorMessage = errorData.error || errorMessage
+          } else {
+            const errorText = await response.text()
+            errorMessage = errorText.length > 100 ? `${errorText.substring(0, 100)}...` : errorText
+          }
+        } catch (parseError) {
+          console.error("Error parsing error response:", parseError)
+        }
+
+        throw new Error(errorMessage)
+      }
+
+      const data = await response.json()
+      console.log(`Force refreshed ${data.length} classrooms via API:`, data)
+
+      // Update the classrooms state with the verified data
+      setClassrooms(data || [])
+      lastClassroomFetch.current = Date.now()
+    } catch (error: any) {
+      console.error("Error force refreshing classrooms:", error)
+      setClassroomFetchError(error.message || "Failed to refresh classrooms. Please try again.")
+    } finally {
+      setIsRefreshingClassrooms(false)
     }
   }
 
@@ -302,13 +355,14 @@ export default function TeacherDashboard() {
   }
 
   // Function to open the assign modal
-  const handleOpenAssignModal = (lessonId: string) => {
+  const handleOpenAssignModal = async (lessonId: string) => {
     setSelectedLessonId(lessonId)
     setSelectedClassroomId("")
     setIsLessonVisible(true)
     setIsAssignModalOpen(true)
+
     // Force refresh classrooms to ensure we have the latest data
-    debouncedFetchClassrooms(true)
+    await fetchClassrooms(true)
   }
 
   // Function to handle adding a lesson to a classroom
@@ -317,6 +371,17 @@ export default function TeacherDashboard() {
       toast({
         title: "Error",
         description: "Please select a classroom to add this lesson to.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    // Verify the classroom exists before proceeding
+    const classroomExists = classrooms.some((classroom) => classroom.id === selectedClassroomId)
+    if (!classroomExists) {
+      toast({
+        title: "Error",
+        description: "The selected classroom no longer exists. Please refresh the list and try again.",
         variant: "destructive",
       })
       return
@@ -349,24 +414,25 @@ export default function TeacherDashboard() {
       // Check if the response is OK
       if (!response.ok) {
         const contentType = response.headers.get("content-type")
-        let errorMessage = `Server error: ${response.status} ${response.statusText}`
+        let errorData
 
         try {
           // Try to parse as JSON if it's JSON content
           if (contentType && contentType.includes("application/json")) {
-            const errorData = await response.json()
-            errorMessage = errorData.error || errorMessage
+            errorData = await response.json()
+            console.error("API error response:", errorData)
           } else {
             // If not JSON, get a small sample of the text to avoid large HTML dumps
             const errorText = await response.text()
             console.error("Non-JSON error response:", errorText.substring(0, 200))
-            errorMessage = `Server error (${response.status}). Check console for details.`
+            errorData = { error: `Server error (${response.status}). Check console for details.` }
           }
         } catch (parseError) {
           console.error("Error parsing error response:", parseError)
+          errorData = { error: `Failed to parse error response: ${parseError}` }
         }
 
-        throw new Error(errorMessage)
+        throw new Error(errorData?.error || `Server error: ${response.status} ${response.statusText}`)
       }
 
       // Parse the JSON response
@@ -395,6 +461,31 @@ export default function TeacherDashboard() {
       })
     } finally {
       setIsAssigning(false)
+    }
+  }
+
+  // Function to check if a classroom ID exists in the API
+  async function checkClassroomExists(classroomId: string) {
+    if (!user || !classroomId) return false
+
+    try {
+      console.log(`Checking if classroom ${classroomId} exists via API`)
+      const response = await fetch(`/api/classrooms/${classroomId}?teacherId=${user.id}`, {
+        method: "GET",
+        headers: {
+          "Cache-Control": "no-cache, no-store, must-revalidate",
+        },
+      })
+
+      if (!response.ok) {
+        return false
+      }
+
+      const data = await response.json()
+      return !!data
+    } catch (error) {
+      console.error(`Error checking if classroom ${classroomId} exists:`, error)
+      return false
     }
   }
 
@@ -550,15 +641,18 @@ export default function TeacherDashboard() {
             <div className="space-y-2">
               <div className="flex justify-between items-center">
                 <Label htmlFor="classroom">Select Classroom</Label>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => debouncedFetchClassrooms(true)}
-                  disabled={isLoadingClassrooms}
-                >
-                  {isLoadingClassrooms ? "Refreshing..." : "Refresh List"}
-                </Button>
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => forceRefreshClassrooms()}
+                    disabled={isRefreshingClassrooms}
+                  >
+                    <RefreshCw className="h-3 w-3 mr-1" />
+                    {isRefreshingClassrooms ? "Refreshing..." : "Force Refresh"}
+                  </Button>
+                </div>
               </div>
 
               <Select value={selectedClassroomId} onValueChange={setSelectedClassroomId}>
@@ -566,7 +660,7 @@ export default function TeacherDashboard() {
                   <SelectValue placeholder={isLoadingClassrooms ? "Loading classrooms..." : "Select a classroom"} />
                 </SelectTrigger>
                 <SelectContent>
-                  {isLoadingClassrooms ? (
+                  {isLoadingClassrooms || isRefreshingClassrooms ? (
                     <SelectItem value="loading" disabled>
                       Loading classrooms...
                     </SelectItem>
@@ -584,7 +678,7 @@ export default function TeacherDashboard() {
                 </SelectContent>
               </Select>
 
-              {classrooms.length === 0 && !isLoadingClassrooms && !classroomFetchError && (
+              {classrooms.length === 0 && !isLoadingClassrooms && !isRefreshingClassrooms && !classroomFetchError && (
                 <p className="text-sm text-amber-600 mt-1">
                   No classrooms found. Please create a classroom first or try refreshing the list.
                 </p>
@@ -602,7 +696,7 @@ export default function TeacherDashboard() {
               </Button>
               <Button
                 onClick={handleAddLessonToClassroom}
-                disabled={!selectedClassroomId || isAssigning}
+                disabled={!selectedClassroomId || isAssigning || isLoadingClassrooms || isRefreshingClassrooms}
                 className="bg-gradient-to-r from-blue-500 to-violet-600 hover:from-blue-600 hover:to-violet-700"
               >
                 {isAssigning ? "Adding..." : "Add to Classroom"}

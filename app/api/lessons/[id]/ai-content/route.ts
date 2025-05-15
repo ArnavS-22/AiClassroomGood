@@ -9,52 +9,47 @@ export async function GET(request: Request, { params }: { params: { id: string }
       return NextResponse.json({ error: "Lesson ID is required" }, { status: 400 })
     }
 
+    console.log(`API: Fetching lesson data for ID: ${lessonId}`)
+
     // Create a Supabase client with the service role key
     const supabaseAdmin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
       auth: { persistSession: false },
     })
 
-    // Get the lesson details
+    // Get the lesson details using maybeSingle() instead of single()
     const { data: lesson, error: lessonError } = await supabaseAdmin
       .from("lessons")
       .select("*")
       .eq("id", lessonId)
-      .single()
+      .maybeSingle()
 
     if (lessonError) {
       console.error("Error fetching lesson:", lessonError)
+      return NextResponse.json({ error: "Failed to fetch lesson" }, { status: 500 })
+    }
+
+    if (!lesson) {
+      console.log(`API: Lesson not found with ID: ${lessonId}`)
       return NextResponse.json({ error: "Lesson not found" }, { status: 404 })
     }
 
-    // Get the AI-generated content
+    console.log(`API: Found lesson: ${lesson.title}`)
+
+    // Get the AI-generated content using maybeSingle() instead of single()
     const { data: aiContent, error: aiContentError } = await supabaseAdmin
       .from("lesson_ai_content")
       .select("*")
       .eq("lesson_id", lessonId)
-      .single()
+      .maybeSingle()
 
     if (aiContentError) {
       console.error("Error fetching AI content:", aiContentError)
-
-      // If the content doesn't exist, return a specific error
-      if (aiContentError.code === "PGRST116") {
-        return NextResponse.json(
-          {
-            error: "AI content not generated yet",
-            lesson: lesson,
-            aiProcessed: lesson.ai_processed,
-            aiProcessingNeeded: lesson.ai_processing_needed,
-          },
-          { status: 404 },
-        )
-      }
-
-      return NextResponse.json({ error: "Failed to fetch AI content" }, { status: 500 })
+      // For errors, log but still return the lesson
     }
 
     return NextResponse.json({
       lesson: lesson,
-      aiContent: aiContent,
+      aiContent: aiContent || null,
     })
   } catch (error) {
     console.error("Error in get AI content endpoint:", error)
