@@ -2,6 +2,12 @@ import { generateText } from "ai"
 import { openai } from "@ai-sdk/openai"
 import { createClient } from "@supabase/supabase-js"
 
+// Function to validate OpenAI API key format
+function isValidOpenAIKey(key: string | undefined): boolean {
+  if (!key) return false
+  return key.startsWith("sk-") && key.length > 20
+}
+
 // Function to generate AI content for a lesson
 export async function generateLessonContent(
   lessonId: string,
@@ -10,19 +16,29 @@ export async function generateLessonContent(
   subject: string,
   gradeLevel: string,
   pdfUrl: string,
+  forceFallback = false,
 ) {
   try {
     console.log(`Generating AI content for lesson ${lessonId}`)
 
     // Create a Supabase client with the service role key
     const supabaseAdmin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
-      auth: {
-        persistSession: false,
-      },
+      auth: { persistSession: false },
     })
 
     // Update lesson to indicate processing has started
     await supabaseAdmin.from("lessons").update({ ai_processing_needed: true }).eq("id", lessonId)
+
+    // Validate OpenAI API key
+    const apiKey = process.env.OPENAI_API_KEY
+    if (!isValidOpenAIKey(apiKey) || forceFallback) {
+      console.warn(
+        `Using fallback content generation. API key invalid or fallback forced. Key format: ${
+          apiKey ? apiKey.substring(0, 5) + "..." : "undefined"
+        }`,
+      )
+      return await generateFallbackContent(lessonId, title, description, subject, gradeLevel, supabaseAdmin)
+    }
 
     // Generate lesson content
     const lessonPrompt = `
@@ -75,24 +91,7 @@ export async function generateLessonContent(
       lessonContent = JSON.parse(text)
     } catch (error) {
       console.error("Error generating lesson content with AI:", error)
-
-      // Fallback content if AI generation fails
-      lessonContent = {
-        title: title,
-        sections: [
-          {
-            title: "Introduction",
-            content: description,
-            keyPoints: ["This is a placeholder for AI-generated content."],
-          },
-        ],
-        keyTerms: [
-          {
-            term: "AI Content",
-            definition: "Content that could not be generated. Please try again later.",
-          },
-        ],
-      }
+      return await generateFallbackContent(lessonId, title, description, subject, gradeLevel, supabaseAdmin)
     }
 
     // Generate quiz questions
@@ -139,14 +138,21 @@ export async function generateLessonContent(
     } catch (error) {
       console.error("Error generating quiz content with AI:", error)
 
-      // Fallback quiz if AI generation fails
+      // Generate fallback quiz
       quizContent = {
         questions: [
           {
-            question: "This is a placeholder question. AI-generated questions could not be created.",
+            question: `What is the main topic of "${title}"?`,
             options: ["Option A", "Option B", "Option C", "Option D"],
             correctAnswer: 0,
-            explanation: "This is a placeholder explanation.",
+            explanation:
+              "This is a placeholder explanation. The correct answer would depend on the actual lesson content.",
+          },
+          {
+            question: "Which of the following best describes the purpose of this lesson?",
+            options: ["To inform", "To entertain", "To persuade", "To instruct"],
+            correctAnswer: 3,
+            explanation: "Most educational content is designed to instruct students on a particular topic.",
           },
         ],
       }
@@ -158,6 +164,7 @@ export async function generateLessonContent(
         lesson_id: lessonId,
         content: lessonContent,
         quiz: quizContent,
+        is_fallback: false,
       },
     ])
 
@@ -180,9 +187,114 @@ export async function generateLessonContent(
     return {
       lesson: lessonContent,
       quiz: quizContent,
+      is_fallback: false,
     }
   } catch (error) {
     console.error("Error in AI lesson generation:", error)
     throw error
+  }
+}
+
+// Function to generate fallback content without using OpenAI
+async function generateFallbackContent(
+  lessonId: string,
+  title: string,
+  description: string,
+  subject: string,
+  gradeLevel: string,
+  supabaseAdmin: any,
+) {
+  console.log(`Generating fallback content for lesson ${lessonId}`)
+
+  // Create basic structured content from the description
+  const sentences = description.split(/[.!?]+/).filter((s) => s.trim().length > 0)
+
+  // Create fallback lesson content
+  const lessonContent = {
+    title: title,
+    sections: [
+      {
+        title: "Introduction",
+        content: description,
+        keyPoints: ["This is an automatically generated lesson based on the provided description."],
+      },
+      {
+        title: "Main Concepts",
+        content:
+          "This section would normally contain detailed explanations of the main concepts. Since AI generation is unavailable, please refer to the original lesson materials.",
+        keyPoints: ["Refer to the original PDF for detailed information."],
+      },
+      {
+        title: "Summary",
+        content:
+          "This lesson covers important concepts related to the topic. Students should review the provided materials for a complete understanding.",
+        keyPoints: ["Review all materials carefully.", "Ask your teacher if you have questions."],
+      },
+    ],
+    keyTerms: [
+      {
+        term: subject,
+        definition: `A key area of study in ${gradeLevel} education.`,
+      },
+      {
+        term: "Lesson",
+        definition: "A structured educational unit designed to teach specific concepts or skills.",
+      },
+    ],
+  }
+
+  // Create fallback quiz content
+  const quizContent = {
+    questions: [
+      {
+        question: `What is the main topic of "${title}"?`,
+        options: [
+          "The topic described in the lesson",
+          "An unrelated topic",
+          "Something else entirely",
+          "None of the above",
+        ],
+        correctAnswer: 0,
+        explanation: "This is a placeholder question. The correct answer is the topic described in the lesson.",
+      },
+      {
+        question: "Which of the following best describes the purpose of this lesson?",
+        options: ["To inform", "To entertain", "To persuade", "To instruct"],
+        correctAnswer: 3,
+        explanation: "Most educational content is designed to instruct students on a particular topic.",
+      },
+    ],
+  }
+
+  // Store the fallback content in the database
+  const { error: contentError } = await supabaseAdmin.from("lesson_ai_content").insert([
+    {
+      lesson_id: lessonId,
+      content: lessonContent,
+      quiz: quizContent,
+      is_fallback: true,
+    },
+  ])
+
+  if (contentError) {
+    console.error("Error storing fallback content:", contentError)
+    throw contentError
+  }
+
+  // Update lesson to indicate processing is complete
+  await supabaseAdmin
+    .from("lessons")
+    .update({
+      ai_processed: true,
+      ai_processing_needed: false,
+    })
+    .eq("id", lessonId)
+
+  console.log(`Fallback content generation complete for lesson ${lessonId}`)
+
+  return {
+    lesson: lessonContent,
+    quiz: quizContent,
+    is_fallback: true,
   }
 }

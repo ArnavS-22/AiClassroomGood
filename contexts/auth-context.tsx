@@ -30,6 +30,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Clean, reusable function to redirect based on role
   const redirectToRoleDashboard = (role: UserRole) => {
+    console.log("Redirecting to dashboard for role:", role)
     if (role === "teacher") {
       router.push("/dashboard/teacher")
     } else if (role === "student") {
@@ -71,6 +72,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               // Auto-redirect if on login or signup pages
               const pathname = window.location.pathname
               if (pathname === "/login" || pathname === "/signup") {
+                console.log("Auto-redirecting from login/signup page to dashboard")
                 redirectToRoleDashboard(role)
               }
             } else {
@@ -109,6 +111,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
             // Redirect on sign in events
             if (event === "SIGNED_IN") {
+              console.log("Signed in, redirecting to dashboard")
               redirectToRoleDashboard(role)
             }
           } else {
@@ -143,6 +146,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               }
 
               if (event === "SIGNED_IN") {
+                console.log("Signed in with metadata role, redirecting to dashboard")
                 redirectToRoleDashboard(metadataRole)
               }
             }
@@ -155,6 +159,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         // If signed out, redirect to home page
         if (event === "SIGNED_OUT") {
+          console.log("Signed out, redirecting to home")
           router.push("/")
         }
       }
@@ -353,6 +358,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               }
 
               setUserRole(metadataRole)
+              console.log("Redirecting after sign in with metadata role:", metadataRole)
               redirectToRoleDashboard(metadataRole)
               return { error: undefined }
             }
@@ -362,6 +368,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
           const role = userData.role as UserRole
           setUserRole(role)
+          console.log("Redirecting after sign in with role:", role)
           redirectToRoleDashboard(role)
           return { error: undefined }
         } catch (error) {
@@ -381,10 +388,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signOut = async () => {
     try {
       setLoading(true)
+      console.log("Signing out...")
       await supabaseBrowser.auth.signOut()
       setUser(null)
       setSession(null)
       setUserRole(null)
+      console.log("Signed out, redirecting to home")
       router.push("/")
     } catch (error) {
       console.error("Error signing out:", error)

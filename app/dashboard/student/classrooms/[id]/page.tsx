@@ -27,6 +27,22 @@ export default function StudentClassroomPage() {
     }
   }, [user, id])
 
+  // Helper function to safely parse JSON responses
+  async function safeJsonParse(response: Response) {
+    try {
+      const text = await response.text()
+      try {
+        return JSON.parse(text)
+      } catch (e) {
+        console.error("Failed to parse JSON response:", text)
+        throw new Error(`Invalid JSON response: ${text.substring(0, 100)}...`)
+      }
+    } catch (e) {
+      console.error("Failed to read response text:", e)
+      throw new Error("Failed to read response")
+    }
+  }
+
   async function fetchClassroomData() {
     setIsLoading(true)
     setError(null)
@@ -39,42 +55,82 @@ export default function StudentClassroomPage() {
       console.log(`Fetching data for classroom ${id} as student ${user.id}`)
 
       // Fetch classroom details
-      const classroomResponse = await fetch(`/api/student/classroom?classroomId=${id}&studentId=${user.id}`)
+      try {
+        const classroomResponse = await fetch(`/api/student/classroom?classroomId=${id}&studentId=${user.id}`)
 
-      if (!classroomResponse.ok) {
-        const errorData = await classroomResponse.json()
-        throw new Error(errorData.error || "Failed to load classroom data")
+        if (!classroomResponse.ok) {
+          const errorData = await safeJsonParse(classroomResponse)
+          throw new Error(errorData.error || `Failed to load classroom data: ${classroomResponse.status}`)
+        }
+
+        const classroomData = await safeJsonParse(classroomResponse)
+        setClassroom(classroomData)
+      } catch (err: any) {
+        console.error("Error fetching classroom:", err)
+        throw new Error(err.message || "Failed to load classroom data")
       }
-
-      const classroomData = await classroomResponse.json()
-      setClassroom(classroomData)
 
       // Fetch assignments
-      const assignmentsResponse = await fetch(
-        `/api/student/classroom-assignments?classroomId=${id}&studentId=${user.id}`,
-      )
+      try {
+        const assignmentsResponse = await fetch(
+          `/api/student/classroom-assignments?classroomId=${id}&studentId=${user.id}`,
+        )
 
-      if (!assignmentsResponse.ok) {
-        const errorData = await assignmentsResponse.json()
-        throw new Error(errorData.error || "Failed to load assignments")
+        if (!assignmentsResponse.ok) {
+          const errorData = await safeJsonParse(assignmentsResponse)
+          console.error("Failed to load assignments:", errorData)
+          // Don't throw here, just log the error and continue
+        } else {
+          const assignmentsData = await safeJsonParse(assignmentsResponse)
+          setAssignments(assignmentsData || [])
+        }
+      } catch (err: any) {
+        console.error("Error fetching assignments:", err)
+        toast({
+          title: "Warning",
+          description: "Could not load assignments. Some features may be limited.",
+          variant: "destructive",
+        })
       }
-
-      const assignmentsData = await assignmentsResponse.json()
-      setAssignments(assignmentsData || [])
 
       // Fetch visible classroom lessons
-      const lessonsResponse = await fetch(`/api/classroom-lessons?classroomId=${id}&studentId=${user.id}`)
+      try {
+        console.log(`Fetching lessons for classroom ${id} as student ${user.id}`)
+        const lessonsResponse = await fetch(`/api/classroom-lessons?classroomId=${id}&studentId=${user.id}`)
 
-      if (!lessonsResponse.ok) {
-        const errorData = await lessonsResponse.json()
-        throw new Error(errorData.error || "Failed to load lessons")
+        if (!lessonsResponse.ok) {
+          const errorText = await lessonsResponse.text()
+          console.error(`Failed to load lessons (${lessonsResponse.status}):`, errorText)
+          toast({
+            title: "Warning",
+            description: `Could not load lessons: ${lessonsResponse.status}`,
+            variant: "destructive",
+          })
+        } else {
+          try {
+            const lessonsData = await safeJsonParse(lessonsResponse)
+            console.log(`Loaded ${lessonsData.length} lessons`)
+            setClassroomLessons(lessonsData || [])
+          } catch (parseError: any) {
+            console.error("Error parsing lessons response:", parseError)
+            toast({
+              title: "Warning",
+              description: "Could not parse lessons data. Some features may be limited.",
+              variant: "destructive",
+            })
+          }
+        }
+      } catch (lessonError: any) {
+        console.error("Exception fetching classroom lessons:", lessonError)
+        toast({
+          title: "Warning",
+          description: "Could not load lessons. Some features may be limited.",
+          variant: "destructive",
+        })
       }
 
-      const lessonsData = await lessonsResponse.json()
-      setClassroomLessons(lessonsData || [])
-
       console.log(
-        `Successfully loaded classroom ${id} with ${assignmentsData.length} assignments and ${lessonsData.length} lessons`,
+        `Successfully loaded classroom ${id} with ${assignments.length} assignments and ${classroomLessons.length} lessons`,
       )
     } catch (err: any) {
       console.error("Error fetching classroom data:", err)

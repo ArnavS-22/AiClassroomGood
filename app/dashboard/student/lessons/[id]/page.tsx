@@ -3,54 +3,62 @@
 import { useEffect, useState } from "react"
 import { useParams, useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useAuth } from "@/contexts/auth-context"
-import { ArrowLeft, Loader2 } from "lucide-react"
-import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
+import { Loader2, AlertCircle, BookOpen, FileText } from "lucide-react"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 
-export default function LessonPage() {
+export default function StudentLessonPage() {
   const { id } = useParams()
   const router = useRouter()
   const { user } = useAuth()
+  const [lesson, setLesson] = useState<any>(null)
+  const [aiContent, setAiContent] = useState<any>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [lessonData, setLessonData] = useState<any>(null)
+  const [activeTab, setActiveTab] = useState("lesson")
 
   useEffect(() => {
-    if (user && id) {
-      fetchLessonData()
-    }
-  }, [user, id])
+    async function fetchLessonData() {
+      if (!user || !id) return
 
-  async function fetchLessonData() {
-    setIsLoading(true)
-    setError(null)
+      try {
+        setIsLoading(true)
+        setError(null)
 
-    try {
-      const supabase = createClientComponentClient()
+        const response = await fetch(`/api/lessons/${id}/ai-content`)
 
-      // Fetch the lesson data
-      const { data: lesson, error: lessonError } = await supabase.from("lessons").select("*").eq("id", id).single()
+        if (!response.ok) {
+          let errorMessage = "Failed to load lesson data"
+          try {
+            const errorData = await response.json()
+            errorMessage = errorData.error || errorMessage
+          } catch (e) {
+            console.error("Error parsing error response:", e)
+          }
+          throw new Error(errorMessage)
+        }
 
-      if (lessonError) {
-        throw new Error("Failed to load lesson data")
+        const data = await response.json()
+        setLesson(data.lesson)
+        setAiContent(data.aiContent)
+      } catch (error: any) {
+        console.error("Error fetching lesson data:", error)
+        setError(error.message || "Failed to load lesson data")
+      } finally {
+        setIsLoading(false)
       }
-
-      setLessonData(lesson)
-    } catch (error: any) {
-      console.error("Error fetching lesson data:", error)
-      setError(error.message || "Failed to load lesson. Please try again.")
-    } finally {
-      setIsLoading(false)
     }
-  }
+
+    fetchLessonData()
+  }, [id, user])
 
   if (isLoading) {
     return (
       <div className="container mx-auto px-4 py-8 text-center">
-        <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" />
-        <p>Loading lesson content...</p>
+        <Loader2 className="h-8 w-8 animate-spin mx-auto" />
+        <p className="mt-2">Loading lesson...</p>
       </div>
     )
   }
@@ -58,12 +66,43 @@ export default function LessonPage() {
   if (error) {
     return (
       <div className="container mx-auto px-4 py-8">
-        <Alert variant="destructive" className="mb-6">
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
           <AlertDescription>{error}</AlertDescription>
         </Alert>
-        <Button variant="outline" onClick={() => router.push("/dashboard/student")}>
-          Return to Dashboard
-        </Button>
+
+        {lesson && (
+          <Card className="mt-6 border border-blue-100">
+            <CardHeader>
+              <CardTitle>{lesson.title}</CardTitle>
+              <CardDescription>
+                Grade: {lesson.grade_level} | Subject: {lesson.subject}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <p className="mb-4">{lesson.description}</p>
+              <p className="text-amber-600 mb-4">
+                The interactive lesson content is still being generated. Please check back later.
+              </p>
+              {lesson.file_url && (
+                <Button variant="outline" asChild>
+                  <a href={lesson.file_url} target="_blank" rel="noopener noreferrer">
+                    <FileText className="mr-2 h-4 w-4" />
+                    View Original Lesson Material
+                  </a>
+                </Button>
+              )}
+            </CardContent>
+          </Card>
+        )}
+      </div>
+    )
+  }
+
+  if (!lesson) {
+    return (
+      <div className="container mx-auto px-4 py-8 text-center">
+        <p>Lesson not found.</p>
       </div>
     )
   }
@@ -72,34 +111,146 @@ export default function LessonPage() {
     <div className="container mx-auto px-4 py-8">
       <div className="flex items-center mb-8">
         <Button variant="ghost" onClick={() => router.back()} className="mr-4">
-          <ArrowLeft className="h-4 w-4 mr-2" />
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="24"
+            height="24"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="h-4 w-4 mr-2"
+          >
+            <path d="m15 18-6-6 6-6" />
+          </svg>
           Back
         </Button>
         <h1 className="text-3xl font-bold">
           <span className="bg-clip-text text-transparent bg-gradient-to-r from-blue-500 to-violet-600 animate-gradient">
-            {lessonData?.title || "Lesson"}
+            {lesson.title || "Lesson"}
           </span>
         </h1>
       </div>
 
-      <div className="max-w-3xl mx-auto">
-        <Card className="border border-blue-100 mb-8">
-          <CardHeader>
-            <CardTitle>AI Lesson Content Coming Soon</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="bg-blue-50 p-6 rounded-lg border border-blue-100 text-center">
-              <h3 className="text-xl font-medium text-blue-800 mb-4">AI-Generated Lesson Content</h3>
-              <p className="text-blue-700 mb-6">
-                AI-generated lesson content is coming soon. Check back later for interactive lessons.
-              </p>
-              <Button variant="outline" onClick={() => router.push("/dashboard/student")}>
-                Return to Dashboard
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+      <Card className="border border-blue-100 mb-6">
+        <CardHeader>
+          <CardTitle>{lesson.title}</CardTitle>
+          <CardDescription>
+            Grade: {lesson.grade_level} | Subject: {lesson.subject}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <p className="mb-4">{lesson.description}</p>
+          {lesson.file_url && (
+            <Button variant="outline" asChild>
+              <a href={lesson.file_url} target="_blank" rel="noopener noreferrer">
+                <FileText className="mr-2 h-4 w-4" />
+                View Original Lesson Material
+              </a>
+            </Button>
+          )}
+        </CardContent>
+      </Card>
+
+      {aiContent ? (
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
+          <TabsList className="mb-6">
+            <TabsTrigger value="lesson">
+              <BookOpen className="mr-2 h-4 w-4" />
+              Lesson Content
+            </TabsTrigger>
+            <TabsTrigger value="quiz">
+              <FileText className="mr-2 h-4 w-4" />
+              Quiz
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="lesson">
+            <Card className="border border-blue-100">
+              <CardContent className="pt-6">
+                {aiContent.content.sections.map((section: any, index: number) => (
+                  <div key={index} className="mb-8">
+                    <h3 className="text-xl font-semibold mb-3">{section.title}</h3>
+                    <p className="mb-4 whitespace-pre-line">{section.content}</p>
+
+                    {section.keyPoints && section.keyPoints.length > 0 && (
+                      <div className="mt-4 bg-blue-50 p-4 rounded-md">
+                        <h4 className="font-medium mb-2">Key Points:</h4>
+                        <ul className="list-disc pl-5 space-y-1">
+                          {section.keyPoints.map((point: string, i: number) => (
+                            <li key={i}>{point}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                ))}
+
+                {aiContent.content.keyTerms && aiContent.content.keyTerms.length > 0 && (
+                  <div className="mt-8 border-t pt-6">
+                    <h3 className="text-xl font-semibold mb-4">Key Terms</h3>
+                    <div className="grid md:grid-cols-2 gap-4">
+                      {aiContent.content.keyTerms.map((term: any, i: number) => (
+                        <div key={i} className="bg-gray-50 p-4 rounded-md">
+                          <h4 className="font-medium text-blue-600">{term.term}</h4>
+                          <p>{term.definition}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="quiz">
+            <Card className="border border-blue-100">
+              <CardHeader>
+                <CardTitle>Quiz: Test Your Knowledge</CardTitle>
+                <CardDescription>Answer these questions to check your understanding of the lesson.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {aiContent.quiz.questions.map((question: any, qIndex: number) => (
+                  <div key={qIndex} className="mb-8 pb-6 border-b last:border-b-0">
+                    <h3 className="text-lg font-medium mb-3">
+                      {qIndex + 1}. {question.question}
+                    </h3>
+                    <div className="space-y-2 mb-4">
+                      {question.options.map((option: string, oIndex: number) => (
+                        <div key={oIndex} className="flex items-start">
+                          <div
+                            className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border ${
+                              oIndex === question.correctAnswer
+                                ? "border-green-500 bg-green-50 text-green-600"
+                                : "border-gray-300"
+                            } mr-3`}
+                          >
+                            {String.fromCharCode(65 + oIndex)}
+                          </div>
+                          <div>{option}</div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="bg-blue-50 p-4 rounded-md mt-4">
+                      <h4 className="font-medium mb-1">Explanation:</h4>
+                      <p>{question.explanation}</p>
+                    </div>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
+      ) : (
+        <Alert className="bg-amber-50 border-amber-200">
+          <AlertCircle className="h-4 w-4 text-amber-600" />
+          <AlertDescription className="text-amber-800">
+            The interactive lesson content is still being generated. Please check back later.
+          </AlertDescription>
+        </Alert>
+      )}
     </div>
   )
 }

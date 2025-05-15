@@ -11,10 +11,10 @@ import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useAuth } from "@/contexts/auth-context"
 import { useToast } from "@/hooks/use-toast"
-import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Checkbox } from "@/components/ui/checkbox"
 import type { Classroom } from "@/lib/types"
-import { Loader2 } from "lucide-react"
+import { Loader2, AlertTriangle } from "lucide-react"
 
 // Define the form schema with validation
 const formSchema = z.object({
@@ -57,6 +57,8 @@ export function LessonUploadForm({ onSuccess }: LessonUploadFormProps) {
   const [classrooms, setClassrooms] = useState<Classroom[]>([])
   const [isLoadingClassrooms, setIsLoadingClassrooms] = useState(false)
   const [classroomFetchError, setClassroomFetchError] = useState<string | null>(null)
+  const [apiKeyStatus, setApiKeyStatus] = useState<"valid" | "invalid" | "unknown">("unknown")
+  const [isCheckingApiKey, setIsCheckingApiKey] = useState(false)
   const { user } = useAuth()
   const { toast } = useToast()
 
@@ -74,6 +76,33 @@ export function LessonUploadForm({ onSuccess }: LessonUploadFormProps) {
   })
 
   const assignToClassroom = form.watch("assignToClassroom")
+  const generateAI = form.watch("generateAI")
+
+  // Check API key status on component mount
+  useEffect(() => {
+    checkApiKeyStatus()
+  }, [])
+
+  // Function to check API key status
+  async function checkApiKeyStatus() {
+    try {
+      setIsCheckingApiKey(true)
+      const response = await fetch("/api/openai/check-key")
+
+      if (!response.ok) {
+        setApiKeyStatus("invalid")
+        return
+      }
+
+      const data = await response.json()
+      setApiKeyStatus(data.isValid ? "valid" : "invalid")
+    } catch (error) {
+      console.error("Error checking API key status:", error)
+      setApiKeyStatus("invalid")
+    } finally {
+      setIsCheckingApiKey(false)
+    }
+  }
 
   // Fetch teacher's classrooms
   useEffect(() => {
@@ -222,6 +251,60 @@ export function LessonUploadForm({ onSuccess }: LessonUploadFormProps) {
 
       const data = await response.json()
 
+      // If AI generation is enabled, trigger it
+      if (data.lesson && values.generateAI) {
+        try {
+          // Trigger AI content generation
+          const aiResponse = await fetch("/api/lessons/generate-ai", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              lessonId: data.lesson.id,
+              teacherId: user.id,
+            }),
+          })
+
+          const aiData = await aiResponse.json()
+
+          if (!aiResponse.ok) {
+            console.error("Error triggering generation:", aiData.error)
+            toast({
+              title: "Generation Warning",
+              description: "Lesson uploaded but content generation failed to start. You can try again later.",
+              variant: "destructive",
+            })
+          } else if (aiData.processing) {
+            if (aiData.usingFallback) {
+              toast({
+                title: "Fallback Content Generation",
+                description: "Your lesson has been uploaded. Using fallback content generation due to invalid API key.",
+              })
+            } else {
+              toast({
+                title: "AI Generation Started",
+                description:
+                  "Your lesson has been uploaded and AI content generation has started. This may take a few minutes.",
+              })
+            }
+          } else if (aiData.alreadyExists) {
+            toast({
+              title: "Content Already Exists",
+              description: `Your lesson has been uploaded. ${
+                aiData.isFallback ? "Fallback" : "AI"
+              } content was already generated for this lesson.`,
+            })
+          }
+        } catch (error) {
+          console.error("Error triggering generation:", error)
+          toast({
+            title: "Generation Warning",
+            description: "Lesson uploaded but content generation failed to start. You can try again later.",
+          })
+        }
+      }
+
       // Show success message and reset form
       toast({
         title: "Lesson uploaded!",
@@ -249,6 +332,18 @@ export function LessonUploadForm({ onSuccess }: LessonUploadFormProps) {
       {error && (
         <Alert variant="destructive" className="mb-6">
           <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+
+      {generateAI && apiKeyStatus === "invalid" && (
+        <Alert variant="warning" className="mb-6 border-amber-300 bg-amber-50">
+          <AlertTriangle className="h-4 w-4 text-amber-600" />
+          <AlertTitle className="text-amber-800">OpenAI API Key Issue</AlertTitle>
+          <AlertDescription className="text-amber-700">
+            Your OpenAI API key appears to be invalid or in the wrong format. The system will use fallback content
+            generation instead of AI. To fix this, add a valid OpenAI API key (starting with "sk-") to your environment
+            variables.
+          </AlertDescription>
         </Alert>
       )}
 
@@ -369,9 +464,11 @@ export function LessonUploadForm({ onSuccess }: LessonUploadFormProps) {
                   <Checkbox checked={field.value} onCheckedChange={field.onChange} />
                 </FormControl>
                 <div className="space-y-1 leading-none">
-                  <FormLabel>Generate AI Content</FormLabel>
+                  <FormLabel>Generate Content</FormLabel>
                   <p className="text-sm text-gray-500">
-                    Use AI to analyze the PDF and generate interactive lesson content and quiz questions
+                    {apiKeyStatus === "valid"
+                      ? "Use AI to analyze the PDF and generate interactive lesson content and quiz questions"
+                      : "Generate basic lesson content and quiz questions (AI unavailable)"}
                   </p>
                 </div>
               </FormItem>

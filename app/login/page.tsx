@@ -30,7 +30,7 @@ export default function LoginPage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [isResendingEmail, setIsResendingEmail] = useState(false)
   const [resendEmail, setResendEmail] = useState("")
-  const { signIn } = useAuth()
+  const { signIn, userRole } = useAuth()
   const { toast } = useToast()
   const router = useRouter()
 
@@ -51,6 +51,18 @@ export default function LoginPage() {
     })
     return () => subscription.unsubscribe()
   }, [form, errorMessage])
+
+  // Redirect if user role changes
+  useEffect(() => {
+    if (userRole) {
+      console.log("Login page: User role detected, redirecting to dashboard:", userRole)
+      if (userRole === "teacher") {
+        router.push("/dashboard/teacher")
+      } else if (userRole === "student") {
+        router.push("/dashboard/student")
+      }
+    }
+  }, [userRole, router])
 
   async function onSubmit(values: z.infer<typeof formSchema>) {
     try {
@@ -86,7 +98,7 @@ export default function LoginPage() {
         description: "You have successfully logged in.",
       })
 
-      // No need to manually redirect here - the auth context handles it based on role
+      // Manual redirect will be handled by the useEffect above
     } catch (error) {
       console.error("Login error:", error)
       setLoginStatus("error")

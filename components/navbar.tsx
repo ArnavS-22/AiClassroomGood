@@ -1,6 +1,8 @@
 "use client"
 
-import { useState } from "react"
+import type React from "react"
+
+import { useState, useEffect } from "react"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
@@ -25,14 +27,26 @@ export function Navbar() {
     return pathname === path || pathname.startsWith(`${path}/`)
   }
 
-  const handleSignOut = async () => {
+  const handleSignOut = async (e: React.MouseEvent) => {
+    e.preventDefault()
     try {
+      console.log("Navbar: Signing out...")
       await signOut()
-      router.push("/")
+      console.log("Navbar: Sign out completed")
     } catch (error) {
       console.error("Error signing out:", error)
     }
   }
+
+  const handleNavigation = (path: string) => (e: React.MouseEvent) => {
+    e.preventDefault()
+    console.log("Navigating to:", path)
+    router.push(path)
+  }
+
+  useEffect(() => {
+    console.log("Navbar: Current user role:", userRole)
+  }, [userRole])
 
   return (
     <nav className="w-full border-b border-indigo-100 bg-white sticky top-0 z-10">
@@ -67,77 +81,84 @@ export function Navbar() {
             <>
               {/* Desktop Navigation */}
               <div className="hidden md:flex items-center gap-6">
-                <Link
+                <a
                   href="/"
+                  onClick={handleNavigation("/")}
                   className={`text-gray-600 hover:text-gray-900 flex items-center gap-1 ${
                     isActive("/") ? "font-medium" : ""
                   }`}
                 >
                   <Home className="h-4 w-4" />
                   <span>Home</span>
-                </Link>
+                </a>
 
                 {userRole === "teacher" && (
                   <>
-                    <Link
+                    <a
                       href="/dashboard/teacher"
+                      onClick={handleNavigation("/dashboard/teacher")}
                       className={`text-gray-600 hover:text-gray-900 flex items-center gap-1 ${
                         isActive("/dashboard/teacher") ? "font-medium" : ""
                       }`}
                     >
                       <FileText className="h-4 w-4" />
                       <span>Lessons</span>
-                    </Link>
-                    <Link
+                    </a>
+                    <a
                       href="/dashboard/teacher?tab=classrooms"
+                      onClick={handleNavigation("/dashboard/teacher?tab=classrooms")}
                       className={`text-gray-600 hover:text-gray-900 flex items-center gap-1 ${
                         pathname.includes("/classrooms") ? "font-medium" : ""
                       }`}
                     >
                       <Users className="h-4 w-4" />
                       <span>Classrooms</span>
-                    </Link>
-                    <Link
+                    </a>
+                    <a
                       href="/dashboard/teacher?tab=assignments"
+                      onClick={handleNavigation("/dashboard/teacher?tab=assignments")}
                       className={`text-gray-600 hover:text-gray-900 flex items-center gap-1 ${
                         pathname.includes("/assignments") ? "font-medium" : ""
                       }`}
                     >
                       <BookOpen className="h-4 w-4" />
                       <span>Assignments</span>
-                    </Link>
+                    </a>
                   </>
                 )}
 
                 {userRole === "student" && (
                   <>
-                    <Link
+                    <a
                       href="/dashboard/student/stream"
+                      onClick={handleNavigation("/dashboard/student/stream")}
                       className={`text-gray-600 hover:text-gray-900 flex items-center gap-1 ${
                         isActive("/dashboard/student/stream") ? "font-medium" : ""
                       }`}
                     >
                       <Activity className="h-4 w-4" />
                       <span>Stream</span>
-                    </Link>
-                    <Link
+                    </a>
+                    <a
                       href="/dashboard/student"
+                      onClick={handleNavigation("/dashboard/student")}
                       className={`text-gray-600 hover:text-gray-900 flex items-center gap-1 ${
                         isActive("/dashboard/student") && !isActive("/dashboard/student/stream") ? "font-medium" : ""
                       }`}
                     >
                       <BookOpen className="h-4 w-4" />
                       <span>Assignments</span>
-                    </Link>
-                    <Link
+                    </a>
+                    <a
                       href="/dashboard/student?tab=classrooms"
+                      onClick={handleNavigation("/dashboard/student?tab=classrooms")}
                       className={`text-gray-600 hover:text-gray-900 flex items-center gap-1 ${
                         pathname.includes("/classrooms") ? "font-medium" : ""
                       }`}
                     >
                       <Users className="h-4 w-4" />
                       <span>Classrooms</span>
-                    </Link>
+                    </a>
                   </>
                 )}
               </div>
@@ -154,37 +175,47 @@ export function Navbar() {
                     <DropdownMenuLabel>Navigation</DropdownMenuLabel>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem asChild onClick={() => setIsMenuOpen(false)}>
-                      <Link href="/" className="flex items-center gap-2 cursor-pointer w-full">
+                      <a
+                        href="/"
+                        onClick={handleNavigation("/")}
+                        className="flex items-center gap-2 cursor-pointer w-full"
+                      >
                         <Home className="h-4 w-4" />
                         <span>Home</span>
-                      </Link>
+                      </a>
                     </DropdownMenuItem>
 
                     {userRole === "teacher" && (
                       <>
                         <DropdownMenuItem asChild onClick={() => setIsMenuOpen(false)}>
-                          <Link href="/dashboard/teacher" className="flex items-center gap-2 cursor-pointer w-full">
+                          <a
+                            href="/dashboard/teacher"
+                            onClick={handleNavigation("/dashboard/teacher")}
+                            className="flex items-center gap-2 cursor-pointer w-full"
+                          >
                             <FileText className="h-4 w-4" />
                             <span>Lessons</span>
-                          </Link>
+                          </a>
                         </DropdownMenuItem>
                         <DropdownMenuItem asChild onClick={() => setIsMenuOpen(false)}>
-                          <Link
+                          <a
                             href="/dashboard/teacher?tab=classrooms"
+                            onClick={handleNavigation("/dashboard/teacher?tab=classrooms")}
                             className="flex items-center gap-2 cursor-pointer w-full"
                           >
                             <Users className="h-4 w-4" />
                             <span>Classrooms</span>
-                          </Link>
+                          </a>
                         </DropdownMenuItem>
                         <DropdownMenuItem asChild onClick={() => setIsMenuOpen(false)}>
-                          <Link
+                          <a
                             href="/dashboard/teacher?tab=assignments"
+                            onClick={handleNavigation("/dashboard/teacher?tab=assignments")}
                             className="flex items-center gap-2 cursor-pointer w-full"
                           >
                             <BookOpen className="h-4 w-4" />
                             <span>Assignments</span>
-                          </Link>
+                          </a>
                         </DropdownMenuItem>
                       </>
                     )}
@@ -192,36 +223,42 @@ export function Navbar() {
                     {userRole === "student" && (
                       <>
                         <DropdownMenuItem asChild onClick={() => setIsMenuOpen(false)}>
-                          <Link
+                          <a
                             href="/dashboard/student/stream"
+                            onClick={handleNavigation("/dashboard/student/stream")}
                             className="flex items-center gap-2 cursor-pointer w-full"
                           >
                             <Activity className="h-4 w-4" />
                             <span>Stream</span>
-                          </Link>
+                          </a>
                         </DropdownMenuItem>
                         <DropdownMenuItem asChild onClick={() => setIsMenuOpen(false)}>
-                          <Link href="/dashboard/student" className="flex items-center gap-2 cursor-pointer w-full">
+                          <a
+                            href="/dashboard/student"
+                            onClick={handleNavigation("/dashboard/student")}
+                            className="flex items-center gap-2 cursor-pointer w-full"
+                          >
                             <BookOpen className="h-4 w-4" />
                             <span>Assignments</span>
-                          </Link>
+                          </a>
                         </DropdownMenuItem>
                         <DropdownMenuItem asChild onClick={() => setIsMenuOpen(false)}>
-                          <Link
+                          <a
                             href="/dashboard/student?tab=classrooms"
+                            onClick={handleNavigation("/dashboard/student?tab=classrooms")}
                             className="flex items-center gap-2 cursor-pointer w-full"
                           >
                             <Users className="h-4 w-4" />
                             <span>Classrooms</span>
-                          </Link>
+                          </a>
                         </DropdownMenuItem>
                       </>
                     )}
 
                     <DropdownMenuSeparator />
                     <DropdownMenuItem
-                      onClick={() => {
-                        handleSignOut()
+                      onClick={(e) => {
+                        handleSignOut(e as React.MouseEvent)
                         setIsMenuOpen(false)
                       }}
                       className="text-red-600 cursor-pointer"
