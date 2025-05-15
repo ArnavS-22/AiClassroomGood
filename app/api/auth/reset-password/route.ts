@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { createServerClient } from "@/lib/supabase"
+import { createServiceRoleSupabaseClient } from "@/lib/supabase-server"
 
 export async function POST(request: NextRequest) {
   try {
@@ -13,7 +13,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Password must be at least 6 characters" }, { status: 400 })
     }
 
-    const supabase = createServerClient()
+    const supabase = createServiceRoleSupabaseClient()
 
     // Find the token in the database
     const { data: tokenData, error: tokenError } = await supabase

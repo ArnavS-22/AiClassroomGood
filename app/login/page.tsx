@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input"
 import { useAuth } from "@/contexts/auth-context"
 import { useToast } from "@/hooks/use-toast"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { getSupabaseBrowserClient } from "@/lib/supabase"
+import { supabaseBrowser } from "@/lib/supabase-browser"
 import { useRouter } from "next/navigation"
 import { Loader2 } from "lucide-react"
 
@@ -32,7 +32,6 @@ export default function LoginPage() {
   const [resendEmail, setResendEmail] = useState("")
   const { signIn } = useAuth()
   const { toast } = useToast()
-  const supabase = getSupabaseBrowserClient()
   const router = useRouter()
 
   const form = useForm<z.infer<typeof formSchema>>({
@@ -110,7 +109,7 @@ export default function LoginPage() {
       // Get the redirect URL
       const redirectUrl = `${window.location.origin}/auth/callback`
 
-      const { error } = await supabase.auth.resend({
+      const { error } = await supabaseBrowser.auth.resend({
         type: "signup",
         email: resendEmail,
         options: {

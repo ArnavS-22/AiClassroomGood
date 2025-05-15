@@ -5,7 +5,7 @@ import type React from "react"
 import { createContext, useContext, useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import type { Session, User } from "@supabase/supabase-js"
-import { getSupabaseBrowserClient } from "@/lib/supabase"
+import { supabaseBrowser } from "@/lib/supabase-browser"
 import type { UserRole } from "@/lib/types"
 
 interface AuthContextType {
@@ -28,7 +28,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [userRole, setUserRole] = useState<UserRole | null>(null)
   const [loading, setLoading] = useState(true)
   const router = useRouter()
-  const supabase = getSupabaseBrowserClient()
 
   // Clean, reusable function to redirect based on role
   const redirectToRoleDashboard = (role: UserRole) => {
@@ -49,7 +48,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         console.time("getSession")
         const {
           data: { session },
-        } = await supabase.auth.getSession()
+        } = await supabaseBrowser.auth.getSession()
         console.timeEnd("getSession")
 
         setSession(session)
@@ -59,7 +58,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           try {
             // Fetch user role from the database
             console.time("fetchUserRole")
-            const { data, error } = await supabase.from("users").select("role").eq("id", session.user.id).single()
+            const { data, error } = await supabaseBrowser
+              .from("users")
+              .select("role")
+              .eq("id", session.user.id)
+              .single()
             console.timeEnd("fetchUserRole")
 
             if (data && !error) {
@@ -89,7 +92,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (event, session) => {
+    } = supabaseBrowser.auth.onAuthStateChange(async (event, session) => {
       console.log("Auth state changed:", event)
       setSession(session)
       setUser(session?.user || null)
@@ -98,7 +101,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         try {
           // Fetch user role from the database
           console.time("fetchUserRoleOnChange")
-          const { data, error } = await supabase.from("users").select("role").eq("id", session.user.id).single()
+          const { data, error } = await supabaseBrowser.from("users").select("role").eq("id", session.user.id).single()
           console.timeEnd("fetchUserRoleOnChange")
 
           if (data && !error) {
@@ -119,7 +122,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               // Create the user record if it doesn't exist
               try {
                 // First check if the user already exists
-                const { data: existingUser } = await supabase
+                const { data: existingUser } = await supabaseBrowser
                   .from("users")
                   .select("id")
                   .eq("id", session.user.id)
@@ -127,7 +130,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
                 if (!existingUser) {
                   // User doesn't exist, so insert
-                  await supabase.from("users").insert([
+                  await supabaseBrowser.from("users").insert([
                     {
                       id: session.user.id,
                       email: session.user.email,
@@ -163,7 +166,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => {
       subscription.unsubscribe()
     }
-  }, [supabase, router])
+  }, [router])
 
   // Helper function to get the correct redirect URL
   const getRedirectUrl = () => {
@@ -174,7 +177,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       // This is a workaround since there's no direct API to check if an email is confirmed
       // We try to sign in with a dummy password and check the error message
-      const { error } = await supabase.auth.signInWithPassword({
+      const { error } = await supabaseBrowser.auth.signInWithPassword({
         email,
         password: "dummy-password-that-will-fail",
       })
@@ -198,7 +201,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setLoading(true)
 
       // Check if a user with this email already exists in our custom users table
-      const { data: existingUser, error: checkError } = await supabase
+      const { data: existingUser, error: checkError } = await supabaseBrowser
         .from("users")
         .select("id, email, role")
         .eq("email", email)
@@ -213,7 +216,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         console.log("User already exists in custom table, attempting to sign in")
 
         // Try to sign in with the provided credentials
-        const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+        const { data: signInData, error: signInError } = await supabaseBrowser.auth.signInWithPassword({
           email,
           password,
         })
@@ -236,7 +239,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         console.log("Using redirect URL:", redirectUrl)
 
         // First, sign up the user with Supabase Auth
-        const { data, error } = await supabase.auth.signUp({
+        const { data, error } = await supabaseBrowser.auth.signUp({
           email,
           password,
           options: {
@@ -255,11 +258,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             // Insert the user into our custom users table
             try {
               // First check if the user already exists
-              const { data: existingUser } = await supabase.from("users").select("id").eq("id", data.user.id).single()
+              const { data: existingUser } = await supabaseBrowser
+                .from("users")
+                .select("id")
+                .eq("id", data.user.id)
+                .single()
 
               if (!existingUser) {
                 // User doesn't exist, so insert
-                const { error: insertError } = await supabase.from("users").insert([
+                const { error: insertError } = await supabaseBrowser.from("users").insert([
                   {
                     id: data.user.id,
                     email,
@@ -273,7 +280,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 }
               } else {
                 // User exists, so update
-                const { error: updateError } = await supabase
+                const { error: updateError } = await supabaseBrowser
                   .from("users")
                   .update({ role, full_name: fullName })
                   .eq("id", data.user.id)
@@ -317,7 +324,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       setLoading(true)
       console.time("signInWithPassword")
-      const { data, error } = await supabase.auth.signInWithPassword({ email, password })
+      const { data, error } = await supabaseBrowser.auth.signInWithPassword({ email, password })
       console.timeEnd("signInWithPassword")
 
       if (error) {
@@ -332,7 +339,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         try {
           // Fetch user role from the database
           console.time("fetchUserRoleAfterSignIn")
-          const { data: userData, error: roleError } = await supabase
+          const { data: userData, error: roleError } = await supabaseBrowser
             .from("users")
             .select("role")
             .eq("id", data.user.id)
@@ -348,11 +355,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
               try {
                 // First check if the user already exists
-                const { data: existingUser } = await supabase.from("users").select("id").eq("id", data.user.id).single()
+                const { data: existingUser } = await supabaseBrowser
+                  .from("users")
+                  .select("id")
+                  .eq("id", data.user.id)
+                  .single()
 
                 if (!existingUser) {
                   // User doesn't exist, so insert
-                  await supabase.from("users").insert([
+                  await supabaseBrowser.from("users").insert([
                     {
                       id: data.user.id,
                       email: data.user.email,
@@ -394,7 +405,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signOut = async () => {
     try {
       setLoading(true)
-      await supabase.auth.signOut()
+      await supabaseBrowser.auth.signOut()
       setUser(null)
       setSession(null)
       setUserRole(null)
