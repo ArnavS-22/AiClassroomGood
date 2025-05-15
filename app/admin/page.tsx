@@ -7,13 +7,12 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { getSupabaseBrowserClient } from "@/lib/supabase"
+import { supabaseBrowser } from "@/lib/supabase-browser"
 
 export default function AdminPage() {
   const [email, setEmail] = useState("")
   const [message, setMessage] = useState<{ text: string; type: "success" | "error" } | null>(null)
   const [isLoading, setIsLoading] = useState(false)
-  const supabase = getSupabaseBrowserClient()
 
   const handleConfirmUser = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -26,7 +25,8 @@ export default function AdminPage() {
 
       // This is a workaround for testing purposes
       // In a real application, you would use admin APIs to confirm users
-      const { data, error } = await supabase.auth.admin.updateUserById(
+      // Note: This will fail as client-side code doesn't have admin privileges
+      const { error } = await supabaseBrowser.auth.admin.updateUserById(
         "00000000-0000-0000-0000-000000000000", // This won't actually work, it's just for demonstration
         { email_confirm: true },
       )

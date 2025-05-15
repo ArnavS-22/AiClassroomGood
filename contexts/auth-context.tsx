@@ -15,7 +15,6 @@ interface AuthContextType {
   signUp: (email: string, password: string, role: UserRole, fullName: string) => Promise<{ error?: string }>
   signIn: (email: string, password: string) => Promise<{ error?: string }>
   signOut: () => Promise<void>
-  isEmailConfirmed: (email: string) => Promise<boolean>
   redirectToRoleDashboard: (role: UserRole) => void
   loading: boolean
 }
@@ -171,29 +170,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Helper function to get the correct redirect URL
   const getRedirectUrl = () => {
     return `${window.location.origin}/auth/callback`
-  }
-
-  const isEmailConfirmed = async (email: string): Promise<boolean> => {
-    try {
-      // This is a workaround since there's no direct API to check if an email is confirmed
-      // We try to sign in with a dummy password and check the error message
-      const { error } = await supabaseBrowser.auth.signInWithPassword({
-        email,
-        password: "dummy-password-that-will-fail",
-      })
-
-      // If the error message mentions "Invalid login credentials", the email is confirmed
-      // If it mentions "Email not confirmed", the email is not confirmed
-      if (error) {
-        return error.message.includes("Invalid login credentials")
-      }
-
-      // If no error (which is unlikely with a dummy password), assume email is confirmed
-      return true
-    } catch (error) {
-      console.error("Error checking email confirmation status:", error)
-      return false
-    }
   }
 
   const signUp = async (email: string, password: string, role: UserRole, fullName: string) => {
@@ -424,7 +400,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     signUp,
     signIn,
     signOut,
-    isEmailConfirmed,
     redirectToRoleDashboard,
     loading,
   }
